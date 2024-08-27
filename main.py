@@ -22,7 +22,7 @@ def setup_args():
 
 def convert_graph_to_sets_and_matrix(graph, num_nodes):
     directed_edges = []
-    undirected_edges = []
+    undirected_edges = set()  # Use a set to avoid adding both (u, v) and (v, u)
 
     # Create an empty distance matrix with 0s
     distance_matrix = np.zeros((num_nodes, num_nodes))
@@ -34,14 +34,17 @@ def convert_graph_to_sets_and_matrix(graph, num_nodes):
             directed_edges.append((u, v, weight))  # Directed edge (u, v, weight)
             distance_matrix[u - 1][v - 1] = weight  # Directed distance
         else:
-            if (v, u) not in undirected_edges:
-                undirected_edges.append((u, v, weight))  # Undirected edge (u, v, weight)
-                undirected_edges.append((v, u, weight))  # Add the reverse with weight
+            # Ensure that only (u, v) or (v, u) is added once by using a sorted tuple
+            edge_tuple = tuple(sorted((u, v)))  # Sorting ensures that (u, v) and (v, u) are treated as the same
+            if edge_tuple not in undirected_edges:
+                undirected_edges.add(edge_tuple)  # Add the edge as a tuple
                 distance_matrix[u - 1][v - 1] = weight
                 distance_matrix[v - 1][u - 1] = weight  # Symmetric for undirected
 
-    return directed_edges, undirected_edges, distance_matrix
+    # Convert the undirected_edges set back to a list of tuples with weights
+    undirected_edges_list = [(u, v, weight) for u, v in undirected_edges]
 
+    return directed_edges, undirected_edges_list, distance_matrix
 
 def save_to_excel(directed_edges, undirected_edges, distance_matrix, filename='graph_output.xlsx'):
     """Save directed set, undirected set, and distance matrix to an Excel file."""
@@ -51,8 +54,7 @@ def save_to_excel(directed_edges, undirected_edges, distance_matrix, filename='g
         df_directed.to_excel(writer, sheet_name='Directed_Edges', index=False)
 
         # Convert undirected edges to a DataFrame (with weight) and save to sheet
-        undirected_edges_set = set(undirected_edges)  # Remove duplicates
-        df_undirected = pd.DataFrame(sorted(undirected_edges_set), columns=['From', 'To', 'Weight'])
+        df_undirected = pd.DataFrame(sorted(undirected_edges), columns=['From', 'To', 'Weight'])
         df_undirected.to_excel(writer, sheet_name='Undirected_Edges', index=False)
 
         # Save distance matrix to a sheet with rows and columns starting from 1
