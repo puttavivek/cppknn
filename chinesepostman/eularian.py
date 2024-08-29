@@ -1,16 +1,9 @@
-"""
-Functions relating to Eularian graphs.
-
-This module contains functions relating to the identification and solution of Eularian
-trails and Circuits.
-"""
 import copy
 import itertools
 import random
-
+import numpy as np
 from . import dijkstra
 from .my_iter import all_unique
-import numpy as np
 
 def fleury_walk(graph, start=None, circuit=False):
     """
@@ -18,7 +11,6 @@ def fleury_walk(graph, start=None, circuit=False):
     Tries to walk a Circuit by making random edge choices. If the route
     dead-ends, returns the route up to that point. Does not revisit
     edges.
-    # TODO: If circuit is True, route must start & end at the same node.
     """
     visited = set()  # Edges
 
@@ -27,6 +19,7 @@ def fleury_walk(graph, start=None, circuit=False):
 
     route = [node]
     while len(visited) < len(graph):
+        print(f"Visited {len(visited)} out of {len(graph.edges)} edges")  # Progress tracking
         # Fleury's algorithm tells us to preferentially select non-bridges
         reduced_graph = copy.deepcopy(graph)
         reduced_graph.remove_edges(visited)
@@ -38,16 +31,16 @@ def fleury_walk(graph, start=None, circuit=False):
         elif bridges:
             chosen_path = random.choice(bridges)
         else:
+            print(f"Dead-end reached after visiting {len(route)} nodes")  # Dead-end tracking
             break  # Reached a dead-end, no path options
+
         next_node = reduced_graph.edges[chosen_path].end(node)  # Other end
-
         visited.add(chosen_path)  # Never revisit this edge
-
         route.append(next_node)
         node = next_node
 
+    print(f"Completed walk visiting {len(visited)} edges.")
     return route
-
 
 def eularian_path(graph, start=None, circuit=False):
     """
@@ -56,25 +49,23 @@ def eularian_path(graph, start=None, circuit=False):
     If `start` is set, force start at that Node.
     """
     for i in range(1, 1001):
+        print(f"Attempt {i}: Starting Eulerian walk...")
         route = fleury_walk(graph, start, circuit)
         if len(route) == len(graph) + 1:  # We visited every edge
+            print(f"Found Eulerian circuit in {i} attempts.")
             return route, i
+        print(f"Attempt {i} failed. Current route length: {len(route)}")
+    print(f"Gave up after 1000 attempts. No Eulerian circuit found.")
     return [], None  # Never found a solution
-
 
 def find_dead_ends(graph):
     """
     Return a list of dead-ended edges.
-
-    Find paths that are dead-ends. We know we have to double them, since
-    they are all order 1, so we'll do this ahead of time to alleviate
-    odd pair set finding
     """
     single_nodes = [k for k, order in graph.node_orders.items() if order == 1]
     return set(
         [x for k in single_nodes for x in graph.edges.values() if k in (x.head, x.tail)]
     )
-
 
 def build_node_pairs_knn(graph, k=2):
     """
@@ -92,12 +83,9 @@ def build_node_pairs_knn(graph, k=2):
 
     return node_pairs
 
-
-
 def knn(graph, node, k):
     """
     K-Nearest Neighbors for a given node using Dijkstra's Algorithm.
-    Finds the K nearest neighbors by calculating the shortest paths using dijkstra.find_cost.
     """
     odd_nodes = graph.odd_nodes
     distances = {}
@@ -105,36 +93,17 @@ def knn(graph, node, k):
     # Find shortest paths from the current node to all other odd nodes
     for target_node in odd_nodes:
         if target_node != node:
-            # Use dijkstra.find_cost to get the shortest path and cost between node and target_node
             cost, _ = dijkstra.find_cost((node, target_node), graph)
             distances[target_node] = cost
 
-    # Sort the neighbors by distance and return the K closest nodes
     sorted_neighbors = sorted(distances, key=distances.get)
     return sorted_neighbors[:k]  # Ensure only 'k' nearest neighbors are returned
-
-
-import time
-
-
-import multiprocessing as mp
-
-def compute_pair_cost(pair, pair_solutions):
-    """Helper function to compute the cost for a pair."""
-    return pair_solutions[pair][0]
-
-
-
-
 
 def find_minimum_path_set_numpy(pair_solutions):
     """
     Use NumPy for faster operations on node pairs.
     """
-    # Convert pair_solutions to a NumPy array (pair, cost)
     pairs = np.array([(pair[0], pair[1], cost) for pair, (cost, path) in pair_solutions.items()])
-
-    # Sort by the third column (cost)
     sorted_pairs = pairs[pairs[:, 2].argsort()]
 
     min_cost = 0
@@ -153,6 +122,9 @@ def find_minimum_path_set_numpy(pair_solutions):
 
     return min_cost, min_route
 
+def compute_pair_cost(pair, pair_solutions):
+    """Helper function to compute the cost for a pair."""
+    return pair_solutions[pair][0]
 
 def build_path_sets(node_pairs, set_size):
     """Builds all possible sets of odd node pairs."""
@@ -160,45 +132,33 @@ def build_path_sets(node_pairs, set_size):
         x for x in itertools.combinations(node_pairs, set_size) if all_unique(sum(x, ()))
     )
 
-
 def unique_pairs(items):
     """Generate sets of unique pairs of odd nodes."""
     for item in items[1:]:
         pair = items[0], item
         leftovers = [a for a in items if a not in pair]
         if leftovers:
-            # Python 2.7 version? Are they equivalent??
             for tail in unique_pairs(leftovers):
                 yield [pair] + tail
-            # Python 3 version:
-            # yield from ([pair] + tail for tail in unique_pairs(leftovers))
         else:
             yield [pair]
-
 
 def find_node_pair_solutions(node_pairs, graph):
     """Return path and cost for all node pairs in the path sets."""
     node_pair_solutions = {}
     for node_pair in node_pairs:
         if node_pair not in node_pair_solutions:
-            # Precompute the shortest path between the nodes using Dijkstra
             cost, path = dijkstra.find_cost(node_pair, graph)
             node_pair_solutions[node_pair] = (cost, path)
-            # Also store the reverse pair
             node_pair_solutions[node_pair[::-1]] = (cost, path[::-1])
     return node_pair_solutions
-
-
 
 def build_min_set(node_solutions):
     """
     Order pairs by cheapest first and build a set by pulling pairs until every node is
     covered.
     """
-    # Doesn't actually work... bad algorithm. What if last node
-    # has insane path cost?
     odd_nodes = set([x for pair in node_solutions.keys() for x in pair])
-    # Sort by node_pair cost
     sorted_solutions = sorted(node_solutions.items(), key=lambda x: x[1][0])
     path_set = []
     for node_pair, solution in sorted_solutions:
@@ -210,7 +170,6 @@ def build_min_set(node_solutions):
         if not odd_nodes:  # We've got a pair for every node
             break
     return path_set
-
 
 def find_minimum_path_set(pair_sets, pair_solutions, graph):
     """Return the cheapest cost & route for all sets of node pairs, dynamically computing missing pairs."""
@@ -224,7 +183,6 @@ def find_minimum_path_set(pair_sets, pair_solutions, graph):
 
         for pair in pair_set:
             if pair not in pair_solutions:
-                # Fallback to calculate missing pairs using dijkstra if not already in pair_solutions
                 cost, path = dijkstra.find_cost(pair, graph)
                 pair_solutions[pair] = (cost, path)
                 pair_solutions[pair[::-1]] = (cost, path[::-1])
@@ -238,7 +196,6 @@ def find_minimum_path_set(pair_sets, pair_solutions, graph):
 
     return cheapest_set, min_route
 
-
 def add_new_edges(graph, min_route):
     """Return new graph w/ new edges extracted from minimum route."""
     new_graph = copy.deepcopy(graph)
@@ -249,20 +206,21 @@ def add_new_edges(graph, min_route):
             new_graph.add_edge(start, end, cost, False)  # Append new edges
     return new_graph
 
-
 def make_eularian(graph, k=5):
     """Add necessary paths to the graph such that it becomes Eulerian using KNN to limit node pairs."""
     print('\tDoubling dead_ends')
     dead_ends = [x.contents for x in find_dead_ends(graph)]
     graph.add_edges(dead_ends)  # Double our dead-ends
 
+    print(f'\tTotal dead ends found and doubled: {len(dead_ends)}')
+
     print('\tBuilding possible odd node pairs using KNN')
     node_pairs = build_node_pairs_knn(graph, k)
-    print('\t\t({} pairs)'.format(len(node_pairs)))
+    print(f'\t\t({len(node_pairs)} pairs)')
 
     print('\tFinding pair solutions')
     pair_solutions = find_node_pair_solutions(node_pairs, graph)
-    print('\t\t({} solutions)'.format(len(pair_solutions)))
+    print(f'\t\t({len(pair_solutions)} solutions)')
 
     print('\tBuilding path sets')
     pair_sets = (x for x in unique_pairs(graph.odd_nodes))
